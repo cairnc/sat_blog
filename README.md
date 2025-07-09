@@ -1,7 +1,7 @@
 
 ### About
 
-This is code to go along with the blog [Improvements to the Separating Axis Test](https://cairno.substack.com/publish/posts/detail/167652493?referrer=%2Fpublish%2Fposts).
+This is code to go along with the blog [Improvements to the Separating Axis Test](https://cairno.substack.com/p/improvements-to-the-separating-axis).
 There is also code for building convex hulls and AABB trees for the demo.
 
 
