@@ -315,7 +315,7 @@ void demoTriMesh()
     ZoneScoped;
 
     static bool enableGravity = true;
-    static bool useLocal = false;
+    static bool useGraph = false;
 
     if (!testTriMesh.numTris)
     {
@@ -439,7 +439,7 @@ void demoTriMesh()
             size_t indexA = i;
             g_numManifolds += generateTriMeshVsSatContacts(staticShape, Transform::identity(), staticShapeIndex,
                                                            bodyA->shape, bodyA->T, indexA,
-                                                           g_manifolds+g_numManifolds, useLocal);
+                                                           g_manifolds+g_numManifolds, useGraph);
         }
     }
     double timer2 = getTime();
@@ -525,7 +525,7 @@ void demoTriMesh()
     ImGui::SliderInt("Num Bodies To Spawn", &numBodiesToSpawn, 1, 8);
     ImGui::SliderFloat("Fly Speed", &g_flySpeed, 5.0f, 100.0f); 
     ImGui::Checkbox("Test Mode", &enableGravity);
-    ImGui::Checkbox("Use Optimized SAT", &useLocal);
+    ImGui::Checkbox("Use Optimized SAT", &useGraph);
     float dt = ImGui::GetIO().DeltaTime;
     ImGui::LabelText("FPS", "%.2f", 1.0f / dt);
     ImGui::LabelText("Frame Time", "%.02f ms", dt * 1000);
@@ -559,9 +559,10 @@ void demoSatTest()
     static SatShape *shapeB;
     static int scrollAmount;
     static int selectedFace;
-    static float offset = 0.2f;
-    static float angle1 = 150;
-    static float angle2 = 125;
+    static float offset = 0.5f;
+    static float angle1 = 221; // 98.76
+    static float angle2 = 221; // 0
+
     static bool showReference = true;
     static TriShape tri;
     static SatShape *hull;
@@ -577,8 +578,10 @@ void demoSatTest()
         tri.setFromVerts(v);
         hull = makeRandomHull({0.2f, 2.2f, 0.5f}, 1.0f, 128);
         shapeA = hull;
-        shapeB = makeRandomHull({0.5f, 0.5f, 1.0f}, 1.0f, 128);
+        shapeB = makeRandomHull({0.5f, 0.5f, 1.0f}, 1.0f, 32);
         g_flycam.pos = {0,0,-5};
+
+
     }
 
     if (testTriangle)
@@ -660,11 +663,11 @@ void demoSatTest()
 
     {
         SatResult res;
-        satCollideLocal(shapeA, xfA, shapeB, xfB, &res);
+        satCollideGraph(shapeA, xfA, shapeB, xfB, &res);
         Vec3 mtv = xfA.inverse().rotate(res.mtv);
         drawPointEx(g_sphereOrigin + mtv*1.02f, COLOR_YELLOW, 0.4f);
 
-        ImGui::TextColored(color, "Local Support (yellow point) = %f", res.support);
+        ImGui::TextColored(color, "Graph Support (yellow point) = %f", res.support);
     }
 
 
@@ -722,21 +725,25 @@ void demoTick()
     g_flySpeed = Math::clamp(g_flySpeed, 0.1f, 100.0f);
 
 
-    if (g_demo == DEMO_BROWSER)
     {
-        ImGui::Begin("Demo Browser");
-        if (ImGui::Button("SAT Demo"))
+        if (g_demo == DEMO_BROWSER)
         {
-            g_demo = DEMO_SAT;
+            ImGui::Begin("Demo Browser");
+            if (ImGui::Button("SAT Demo"))
+            {
+                g_demo = DEMO_SAT;
+            }
+            if (ImGui::Button("Mesh Demo"))
+            {
+                g_demo = DEMO_MESH;
+            }
+            ImGui::End();
         }
-        if (ImGui::Button("Mesh Demo"))
-        {
-            g_demo = DEMO_MESH;
-        }
-        ImGui::End();
+        if (g_demo == DEMO_SAT) demoSatTest();
+        if (g_demo == DEMO_MESH) demoTriMesh();
     }
-    if (g_demo == DEMO_SAT) demoSatTest();
-    if (g_demo == DEMO_MESH) demoTriMesh();
+
+    //demoSatTest();
 
 
 

@@ -526,7 +526,8 @@ struct SatShape
 
     struct Edge 
     { 
-        uint8_t v0, v1, f0, f1; 
+        uint8_t v0, v1;
+        uint8_t f0, f1; 
     };
 
     uint8_t numFaces;
@@ -590,7 +591,7 @@ struct SatResult
     SatShape::Edge edge2;
 };
 
-void satCollideLocal(const SatShape *a, Transform xfA, const SatShape *b, Transform xfB, SatResult *res);
+void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transform xfB, SatResult *res);
 void satCollideReference(const SatShape *a, Transform xfA, const SatShape *b, Transform xfB, SatResult *res);
 void getSupport(Vec3 dir,  const Vec3 verts[], size_t numVerts, float *outSupp, size_t *outIndex);
 float castSphereRay(const SatShape *shape, size_t curVertA, Vec3 rayOrigin, Vec3 rayDir, SatShape::Edge *outEdge);
@@ -643,7 +644,7 @@ struct TriMeshShape
 };
 
 bool loadTriMeshShape(TriMeshShape *shape, const char *filename);
-size_t generateTriMeshVsSatContacts(const TriMeshShape  *triMesh, Transform xfA, size_t indexA, const SatShape*shapeB, Transform xfB, size_t indexB, SolverManifold *manifolds, bool useLocal = false);
+size_t generateTriMeshVsSatContacts(const TriMeshShape  *triMesh, Transform xfA, size_t indexA, const SatShape*shapeB, Transform xfB, size_t indexB, SolverManifold *manifolds, bool useGraph = false);
 
 struct SolverBody
 {

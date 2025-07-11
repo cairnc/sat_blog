@@ -2449,496 +2449,294 @@ void satCollideReference(const SatShape *a, Transform xfA, const SatShape *b, Tr
     res->mtv = xfA.rotate(res->mtv);
 }
 
-enum SatStatus 
+void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transform xfB, SatResult *res)
 {
-    SAT_REVERSE,
-    SAT_CONTINUE,
-    SAT_FINISHED,
-};
+    ASSERT(b->numFaces != 2);
+    ASSERT(a->vertEdges);
 
+    res->support = INFINITY;
 
-struct SatLocal
-{
-    SatShape::Edge edge;
-    Vec3 normal;
-    size_t vert;
-    float support;
-    bool isTriangle;
-};
+    //Vec3 sphereOrigin = {3,0,0};
+    //for (int i = 0; i < b->numEdges; i++) drawArcBetween(sphereOrigin, b->facePlanes[b->edges[i].f0].normal, b->facePlanes[b->edges[i].f1].normal, 1.0f, COLOR_BLUE, false);
+    //drawSphere(sphereOrigin, 0.99f, ColorWhite, 20, 20);
 
-static Transform g_debugXfA;
-static Transform g_debugXfB;
-static bool g_debugReversed;
+    uint8_t bFaceToVertexRegionA[SAT_MAX];
+    memset(bFaceToVertexRegionA, 0xff, sizeof(bFaceToVertexRegionA[0])*b->numFaces);
 
-SatStatus getNextEdge(const SatShape *shapeA, size_t faceA,
-                      const SatShape *shapeB, size_t vertB,
-                      Transform bToA, SatLocal *ctx)
-{
-    Plane planeA = shapeA->facePlanes[faceA];
-    SatShape::EdgeList fA = shapeA->faces[faceA];
-    Vec3 vB =bToA.mul(shapeB->vertPos[vertB]);
+    // For a face afi this map is the min support so far of all the arcs that intersected with arcs connecting afi 
+    float aFaceMaxDot[SAT_MAX];
+    uint8_t aFaceToVertexRegionB[SAT_MAX];
+    memset(aFaceToVertexRegionB, 0xff, sizeof(aFaceToVertexRegionB[0])*b->numFaces);
+    memset(aFaceMaxDot, 0xfe, sizeof(aFaceMaxDot[0])*a->numFaces);
 
-    float minDeltaSupp = INFINITY;
-    SatShape::Edge minEdge;
-    Vec3 minNormalGrad;
-    for(size_t i = 0; i < fA.num; i++)
+    // as a float the bit pattern 0xfefefefe is -1.6947395e+38
+
+    Transform bToA = xfA.inverse().mul(xfB);
+    Transform aToB = bToA.inverse();
+
+    // Find the vertex region that contains the first face of B
+    // This is the face we will start our traversal from.
     {
-        SatShape::Edge edge = shapeA->faceEdges[fA.first+ i];
-
-
-        Vec3 vA0 = shapeA->vertPos[edge.v0];
-        Vec3 vA1 = shapeA->vertPos[edge.v1];
-        Vec3 e = vA1- vA0;
-        Vec3 dn = e.cross(planeA.normal).normalized();
-        ASSERT(shapeA->numFaces == 2 || dn.dot(shapeA->facePlanes[edge.f1].normal - shapeA->facePlanes[edge.f0].normal) >= 0);
-        Vec3 suppGrad = vA0+vB;
-        float ds = dn.dot(suppGrad);
-        //drawArrow(g_sphereOrigin+g_debugXfA.rotate(planeA.normal), g_debugXfA.rotate(dn*0.05f), ds > 0 ? COLOR_ORANGE : COLOR_PURPLE, 0.1f);
-        if(ds < minDeltaSupp)
+        size_t faceIndex = 0;
+        Plane plane = b->facePlanes[faceIndex];
+        Vec3 normal = -bToA.rotate(plane.normal);
+        float planeDist = plane.dist - normal.dot(bToA.p);
+        float supp;
+        size_t vertex;
+        getSupport(normal, a->vertPos, a->numVerts, &supp, &vertex);
+        supp += planeDist;
+        if (supp < res->support)
         {
-            minDeltaSupp = ds;
-            minEdge = edge;
-            minNormalGrad = dn;
-        }
-    }
-
-    ctx->support = planeA.normal.dot(vB) + planeA.dist;
-    ctx->normal = planeA.normal;
-    ctx->vert = vertB;
-
-    if ((minEdge.v0 == ctx->edge.v1 && minEdge.v1 == ctx->edge.v0) || minDeltaSupp > 0)
-    {
-        return SAT_FINISHED;
-    }
-
-    ctx->edge = minEdge;
-    ctx->isTriangle = shapeA->numFaces == 2;
-    //drawArrow(g_sphereOrigin+g_debugXfA.rotate(planeA.normal), g_debugXfA.rotate(minNormalGrad*0.05f),   COLOR_PURPLE, 0.1f);
-    return SAT_CONTINUE;
-}
-
-static Vec3 computeEdgeMidpoint(SatShape::Edge edge, const SatShape *shape)
-{
-    Vec3 n0 = shape->facePlanes[edge.f0].normal;
-    Vec3 n1 = shape->facePlanes[edge.f1].normal;
-    Vec3 e = shape->vertPos[edge.v1] - shape->vertPos[edge.v0];
-    Vec3 t0 = e.cross(n0).normalized();
-    Vec3 t1 = n1.cross(e).normalized();
-    Vec3 mid = Vec3::lerp(0.5f, n0+ t0, n1+ t1).normalized();
-    return mid;
-}
-
-float castSphereRay(const SatShape *shape, size_t curVertA, Vec3 rayOrigin, Vec3 rayDir, SatShape::Edge *outEdge)
-{
-    SatShape::EdgeList vert = shape->verts[curVertA];
-    SatShape::Edge nextPortal = {0};
-    float tMin = INFINITY;
-    for(size_t j = 0; j < vert.num; j++)
-    {
-        SatShape::Edge portal = shape->vertEdges[vert.first+j];
-        Vec3 portalNormal = shape->vertPos[curVertA] - shape->vertPos[portal.v1]; // <- this normal can be innacurate if hull is bad
-        //drawArrow(sphereOrigin+ vecNormalize(vecLerp(0.5f, b->facePlanes[b->edges[portal.e].f0].normal, b->facePlanes[b->edges[portal.e].f1].normal)), portalNormal, COLOR_RED, 1.0f);
-
-
-        float raySlope = portalNormal.dot(rayDir);
-        if(raySlope < -0.001f)
-        {
-            float tHit = -rayOrigin.dot(portalNormal)/raySlope;
-            if(tHit < tMin)
+            res->support = supp;
+            res->vert = vertex;
+            res->face = faceIndex;
+            res->type = SatResult::VERT_FACE;
+            res->mtv = normal;
+            if (supp < 0)
             {
-                nextPortal = portal;
-                tMin = tHit;
+                res->mtv = xfA.rotate(res->mtv);
+                return;
             }
         }
+
+        bFaceToVertexRegionA[faceIndex] = (uint8_t)vertex; 
     }
-    *outEdge = nextPortal;
-    return tMin;
-}
 
-static SatStatus traceEdge(const SatShape *shapeA, const SatShape *shapeB, Transform aToB, SatLocal *ctx)
-{
-    SatShape::Edge eA = ctx->edge;
-    size_t vertB = ctx->vert;
-    ASSERT(vertB != -1);
-    bool isTriangle = ctx->isTriangle;
-    ctx->isTriangle = false;
-
-    Vec3 eAN1 = aToB.rotate(shapeA->facePlanes[eA.f1].normal);
-    Vec3 rayA0 = aToB.rotate(ctx->normal);
-    Vec3 rayA1 = isTriangle ? aToB.rotate(computeEdgeMidpoint(eA, shapeA)) : eAN1;
-    Vec3 rayDA = rayA1 - rayA0;
-
-    Vec3 vA0 = aToB.mul(shapeA->vertPos[eA.v0]);
-    Vec3 vA1 = aToB.mul(shapeA->vertPos[eA.v1]);
-    Vec3 eDirA = vA1 - vA0;
-
-    ctx->support = INFINITY;
-    ctx->vert = -1;
-
-    for(size_t it = 0; it < 32; it++)
+    for(int i = 0; i < b->numEdges; i++)
     {
+        SatShape::Edge eB = b->edges[i];
+        Vec3 rayOrigin = -bToA.rotate(b->facePlanes[eB.f0].normal);
+        Vec3 rayEnd = -bToA.rotate(b->facePlanes[eB.f1].normal);
+        Vec3 rayDir = rayEnd - rayOrigin;
 
-        SatShape::Edge eB;
-        float tMin = castSphereRay(shapeB, vertB, rayA0, rayDA, &eB);
-        //if (reversed) drawGaussRegion(vertB, shapeB, debugXfB, COLOR_RED);
+        int curVertA = bFaceToVertexRegionA[eB.f0];
+        ASSERT(curVertA != 0xff);
 
-        if(tMin < 1)
+        //drawPoint(sphereOrigin+rayOrigin, COLOR_ORANGE);
+        //drawArcBetween(sphereOrigin, rayOrigin, rayMid, 1.0f, COLOR_GREEN, true);
+        //drawArcBetween(sphereOrigin, rayMid, rayEnd, 1.0f, COLOR_RED, true);
+
+        // Traverse the arc from f0 to f1
+        for (int it = 0; it < 32; it++)
         {
-            ASSERT(eB.v0 == vertB);
-
-            Vec3 vB0 = shapeB->vertPos[eB.v0];
-            Vec3 vB1 = shapeB->vertPos[eB.v1];
-            Vec3 normal =(rayA0 + rayDA*tMin).normalized();
-            Vec3 suppGrad = vA1+vB0;
-            //drawGaussPoint(g_debugXfB.rotate(normal), COLOR_RED);
-
-
-            Vec3 eDirB = vB1 - vB0;
-
+            // We are in the vertex region of curVertA
+            // The vertex region is bounded by vert.num planes, it forms a convex linear cone.
+            // To find which plane we exit we raycast against the planes.
+            SatShape::EdgeList vert = a->verts[curVertA];
+            SatShape::Edge eA = { 0 };
+            float tMin = INFINITY;
+            for (size_t j = 0; j < vert.num; j++)
             {
-                Vec3 dnA0 = normal.cross(eDirA).normalized();
-                //ASSERT(vecDot(dnA0, rayDA) > 0);
-                Vec3 dnA1 = -dnA0;
-                Vec3 dnB0 = eDirB.cross(normal).normalized();
-                //ASSERT(vecDot(dnB0, shapeB->facePlanes[eB.f1].normal - shapeB->facePlanes[eB.f0].normal) > 0);
-                Vec3 dnB1 = -dnB0;
+                SatShape::Edge portal = a->vertEdges[vert.first + j];
+                
+                // this can be precomputed and laid out as SoA for SIMD
+                Vec3 portalNormal = a->vertPos[curVertA] - a->vertPos[portal.v1]; // <- this normal can be innacurate if hull is bad
 
+                //drawArrow(sphereOrigin+ Vec3::lerp(0.5f, b->facePlanes[b->edges[portal.e].f0].normal, b->facePlanes[b->edges[portal.e].f1].normal).normalize(), portalNormal, COLOR_RED, 1.0f);
 
-                float dnB0_dot_eDirA = dnB0.dot(eDirA);
-                Vec3 xA0, xA1;
-                if (dnB0_dot_eDirA > 0)
+                float raySlope = portalNormal.dot(rayDir);
+                if (raySlope < -0.001f)
                 {
-                    xA0 = vA0;
-                    xA1 = vA1;
-                }
-                else
-                {
-                    xA0 = vA1;
-                    xA1 = vA0;
-                }
-
-
-                float dsA0 = dnA0.dot(vA0+vB1);
-                float dsA1 = dnA1.dot(vA0+vB0);
-                float dsB0 = dnB0.dot(vB0+xA1);
-                float dsB1 = dnB1.dot(vB0+xA0);
-
-                //if (reversed)
-                {
-
-                    //drawArrow(g_sphereOrigin+debugXfB.rotate(normal), g_debugXfB.rotate(dnA0)*0.1f, dsA0 > 0 ? COLOR_ORANGE : COLOR_PURPLE, 0.1f);
-                    //drawGaussRegion(eA.v0, shapeA, g_debugXfA, COLOR_ORANGE);
-                    //drawGaussRegion(eB.v1, shapeB, g_debugXfB, COLOR_RED);
-
-                    //drawArrow(g_sphereOrigin+ g_debugXfB.rotate(normal), g_debugXfB.rotate(dnA1)*0.1f, dsA1 > 0 ? COLOR_ORANGE : COLOR_PURPLE, 0.1f);
-
-                    //drawArrow(g_sphereOrigin+ g_debugXfB.rotate(normal), g_debugXfB.rotate(dnB0)*0.1f, dsB0 > 0 ? COLOR_ORANGE : COLOR_PURPLE, 0.1f);
-
-                    //drawArrow(g_sphereOrigin+ g_debugXfB.rotate(normal), g_debugXfB.rotate(dnB1)*0.1f, dsB1 > 0 ? COLOR_ORANGE : COLOR_PURPLE, 0.1f);
-                }
-
-
-                float dsMin = dsA0;
-                size_t minIndex = 0;
-
-                if(dsA1 < dsMin)
-                {
-                    dsMin = dsA1;
-                    minIndex = 1;
-                }
-
-                if(dsB0 < dsMin)
-                {
-                    dsMin = dsB0;
-                    minIndex = 2;
-                }
-
-                if(dsB1 < dsMin)
-                {
-                    dsMin = dsB1;
-                    minIndex = 3;
-                }
-
-                ctx->support = normal.dot(suppGrad);
-                ctx->normal = normal;
-
-                if(dsMin >= 0)
-                {
-                    ctx->edge = eB;
-                    return SAT_FINISHED;
-                }
-
-                if(minIndex == 0)
-                {
-                    //drawArrow(g_sphereOrigin+ g_debugXfB.rotate( normal), g_debugXfB.rotate( dnA0)*0.05f,  COLOR_PURPLE, 0.1f);
-                    // keep going
-                }
-                else if(minIndex == 1)
-                {
-                    // just came from this direction
-                    //drawArrow(g_sphereOrigin+ g_debugXfB.rotate( normal), g_debugXfB.rotate( dnA1)*0.05f, COLOR_PURPLE, 0.1f);
-                    ctx->edge = eB;
-                    return SAT_FINISHED;
-                }
-                else if(minIndex == 2)
-                {
-                    //drawArrow(g_sphereOrigin+ g_debugXfB.rotate( normal), g_debugXfB.rotate( dnB0)*0.05f,  COLOR_PURPLE, 0.1f);
-                    //drawGaussRegion(eB.v0, shapeB, debugXfB, COLOR_RED);
-                    ctx->edge = eB;
-                    //ctx->dnormal = dnB0;
-                    ctx->vert = dnB0_dot_eDirA > 0 ? eA.v1 : eA.v0;
-                    //drawGaussRegion(ctx->vert, shapeA, debugXfA, COLOR_PURPLE);
-                    return SAT_REVERSE;
-                }
-                else if(minIndex == 3)
-                {
-                    //drawArrow(g_sphereOrigin+ g_debugXfB.rotate( normal), g_debugXfB.rotate( dnB1)*0.1f,  COLOR_PURPLE, 0.1f);
-                    ctx->edge = {eB.v1,  eB.v0, eB.f1, eB.f0};
-                    //ctx->dnormal = dnB1;
-                    ctx->vert = -dnB0_dot_eDirA > 0 ? eA.v1 : eA.v0;
-                    return SAT_REVERSE;
+                    float tHit = -rayOrigin.dot(portalNormal) / raySlope;
+                    if (tHit < tMin)
+                    {
+                        eA = portal;
+                        tMin = tHit;
+                    }
                 }
             }
 
-            vertB = eB.v1;
+            //ASSERT(tMin >= 0);
 
-
-            //drawPoint(sphereOrigin+ normal, COLOR_RED);
-        }
-        else
-        {
-            if (isTriangle)
+            if(tMin < 1)
             {
-                rayA0 = rayA1;
-                rayDA =  eAN1 - rayA0;
-                isTriangle = false;
+                // We hit a plane before we reached the end of the arc.
+                // This means we are changing vertex regions.
+
+                curVertA = eA.v1;
+                Vec3 normal =(rayOrigin+rayDir*tMin).normalized();
+                Vec3 bVert0inA = -bToA.mul(b->vertPos[eB.v0]); // vert is in -B 
+                float support = normal.dot(bVert0inA + a->vertPos[curVertA]);
+                if (support < res->support)
+                {
+                    res->mtv = normal;
+                    res->type = SatResult::EDGE_EDGE;
+                    res->support = support;
+                    res->edge1 = eA;
+                    res->edge2 = eB;
+
+                    if (support < 0)
+                    {
+                        // shapes aren't overlapping.
+
+                        //drawPoint(vecAdd(sphereOrigin, normal), COLOR_PURPLE);
+                        //SatVertex v = b->verts[curVertB];
+                        //for(int j = 0; j < v.numPortals; j++)
+                        //{
+                        //    SatEdge e = b->edges[b->vertEdges[v.firstPortal + j].e];
+                        //    drawArcBetween(sphereOrigin, b->facePlanes[e.f0].normal, b->facePlanes[e.f1].normal, 1.0f, COLOR_YELLOW, true);
+                        //}
+
+                        res->mtv = xfA.rotate(res->mtv);
+                        return;
+                    }
+                }
+
+
+                // relax both faces of A connected to the arc we intersected
+                Vec3 bVert1inA = -bToA.mul(b->vertPos[eB.v1]); // vert is in -B 
+
+                // There might be a way to do less work here
+
+                // f0
+                {
+                    size_t fa = eA.f0;
+                    Plane aPlane = a->facePlanes[fa];
+                    float dot_b0 = aPlane.dist + aPlane.normal.dot(bVert0inA);
+                    float dot_b1 = aPlane.dist + aPlane.normal.dot(bVert1inA);
+                    if (dot_b0 > aFaceMaxDot[fa])
+                    {
+                        aFaceMaxDot[fa] = dot_b0;
+                        aFaceToVertexRegionB[fa] = eB.v0; 
+                    }
+                    if (dot_b1 > aFaceMaxDot[fa])
+                    {
+                        aFaceMaxDot[fa] = dot_b1;
+                        aFaceToVertexRegionB[fa] = eB.v1; 
+                    }
+                }
+
+                // f1
+                {
+                    size_t fa = eA.f1;
+                    Plane aPlane = a->facePlanes[fa];
+                    float dot_b0 = aPlane.dist + aPlane.normal.dot(bVert0inA);
+                    float dot_b1 = aPlane.dist + aPlane.normal.dot(bVert1inA);
+                    if (dot_b0 > aFaceMaxDot[fa])
+                    {
+                        aFaceMaxDot[fa] = dot_b0;
+                        aFaceToVertexRegionB[fa] = eB.v0; 
+                    }
+                    if (dot_b1 > aFaceMaxDot[fa])
+                    {
+                        aFaceMaxDot[fa] = dot_b1;
+                        aFaceToVertexRegionB[fa] = eB.v1; 
+                    }
+                }
+                
+
+                // Now we keep continue starting from the intersection point we just hit.
+                rayOrigin = normal;
+                rayDir = rayEnd - rayOrigin;
+
+                //drawPoint(vecAdd(sphereOrigin, normal), COLOR_RED);
             }
             else
             {
-                //drawGaussPoint(g_debugXfB.rotate(rayA1), COLOR_RED);
-                ctx->vert = vertB;
-                return SAT_CONTINUE;
+                // We didn't hit anything which means f1 is in the region curVertA
+                break;
             }
         }
-    }
 
-    ASSERT(0);
-    return SAT_FINISHED;
-}
-
-void _satCollideLocal(const SatShape *shapeA, Transform xfA, const SatShape *shapeB, Transform xfB, SatResult *res)
-{
-    ZoneScoped;
-
-    Transform bToA = Transform::composeNeg(xfA, xfB);
-    Transform aToB = Transform::composeNeg(xfB, xfA);
-
-    size_t faceA = -1;
-    size_t vertB = -1;
-
-    size_t faceB = -1;
-    size_t vertA = -1;
-    if (res->type == SatResult::FACE_VERT)
-    {
-        faceA = res->face;
-        vertB = res->vert;
-
-    }
-    else if (res->type == SatResult::VERT_FACE)
-    {
-        ASSERT(0);
-    }
-    else if (res->type == SatResult::EDGE_EDGE)
-    {
-        ASSERT(0);
-    }
-    else
-    {
-        ASSERT(0);
-    }
-
-
-
-    bool reversed = false;
-    SatLocal ctx;
-    res->support = INFINITY;
-    res->type = SatResult::NONE;
-
-    size_t it = 0;
-    for (it = 0; it < 64; it++)
-    {
-        if (reversed)
         {
-            //g_debugXfA = bToA;
-            //g_debugXfB = Transform::identity();
-            //g_debugReversed = true;
+            bFaceToVertexRegionA[eB.f1] = curVertA;
 
-            if (faceB != -1)
+            // Find the plane of f1 in A space
+            Plane bPlane = b->facePlanes[eB.f1];
+            Vec3 bPlaneNormalInA = -bToA.rotate(bPlane.normal);
+            float bPlaneDistInA = bPlane.dist - bPlaneNormalInA.dot(bToA.p);
+
+            float support = rayEnd.dot(a->vertPos[curVertA]) + bPlaneDistInA;
+            if(support < res->support)
             {
-                SatStatus status = getNextEdge(shapeB, faceB, shapeA, vertA, aToB, &ctx);
+                res->mtv = rayEnd;
+                res->type = SatResult::VERT_FACE;
+                res->support = support;
+                res->vert = curVertA;
+                res->face = eB.f1;
 
-                if (ctx.support < res->support)
+                if (support < 0)
                 {
-                    res->support = ctx.support;
-                    res->mtv = -xfB.rotate(ctx.normal);
-                    res->type = SatResult::VERT_FACE;
-                    res->vert = vertA;
-                    res->face = faceB;
-                }
+                    // shapes aren't overlapping.
 
-                if (status != SAT_CONTINUE)
-                {
-                    break;
-                }
-            }
+                    //drawPoint(sphereOrigin + rayEnd, COLOR_PURPLE);
 
-            {
-                SatShape::Edge eB = ctx.edge;
-                SatStatus status = traceEdge(shapeB, shapeA, bToA, &ctx);
-                if(ctx.support < res->support)
-                {
-                    res->type = SatResult::EDGE_EDGE;
-                    res->edge1 = ctx.edge;
-                    res->edge2 = eB;
-                    res->support = ctx.support;
-                    res->mtv = xfA.rotate(ctx.normal);
-                }
+                    //SatVertex v = b->verts[curVertB];
+                    //for(int j = 0; j < v.numPortals; j++)
+                    //{
+                    //    SatEdge e = b->edges[b->vertEdges[v.firstPortal + j].e];
+                    //    drawArcBetween(sphereOrigin, b->facePlanes[e.f0].normal, b->facePlanes[e.f1].normal, 1.0f, COLOR_YELLOW, true);
+                    //}
 
-                if(status == SAT_REVERSE)
-                {
-                    // now ctx->vert is A vert and ctx->edge is B edge 
-                    faceA = -1;
-                    vertB = -1;
-                    reversed = false;
-                }
-                else if(status == SAT_CONTINUE)
-                {
-                    faceB = ctx.edge.f1;
-                    vertA = ctx.vert;
-                }
-                else
-                {
-                    break;
-                }
-            }
-        }
-        else
-        {
-            //g_debugXfA = Transform::identity();
-            //g_debugXfB = bToA;
-            //g_debugReversed = true;
-
-            if (faceA != -1)
-            {
-                SatStatus status = getNextEdge(shapeA, faceA, shapeB, vertB, bToA, &ctx);
-                if(ctx.support < res->support)
-                {
-                    res->support = ctx.support;
-                    res->mtv = xfA.rotate(ctx.normal);
-                    res->type = SatResult::FACE_VERT;
-                    res->face = faceA;
-                    res->vert = vertB;
-                }
-
-                if (status != SAT_CONTINUE)
-                {
-                    break;
-                }
-            }
-
-
-            {
-                SatShape::Edge eA = ctx.edge;
-                SatStatus status = traceEdge(shapeA, shapeB, aToB, &ctx);
-                if(ctx.support < res->support)
-                {
-                    res->type = SatResult::EDGE_EDGE;
-                    res->edge1 = eA;
-                    res->edge2 = ctx.edge;
-                    res->support = ctx.support;
-                    res->mtv = -xfB.rotate(ctx.normal);
-                }
-
-                if(status == SAT_REVERSE)
-                {
-                    // now ctx->vert is A vert and ctx->edge is B edge 
-                    faceB = -1;
-                    vertA = -1;
-                    reversed = true;
-                }
-                else if(status == SAT_CONTINUE)
-                {
-                    faceA = ctx.edge.f1;
-                    vertB = ctx.vert;
-                }
-                else
-                {
-                    break;
+                    res->mtv = xfA.rotate(res->mtv);
+                    return;
                 }
             }
 
         }
     }
 
-    ZoneValue(it);
-}
 
-void getInitialSeparatingAxis(const SatShape *shapeA, Transform xfA, const SatShape *shapeB, Transform xfB, SatResult *res)
-{
-    ZoneScoped;
-    Vec3 initialDir;
+    // Color any remaining faces of A that haven't been had their arcs intersected
+    uint8_t queue[SAT_MAX];
+    size_t queueLo = 0;
+    size_t queueHi = 0;
+    for (int i = 0; i < a->numFaces; ++i)
     {
-        //drawArrow(xfA.p, xfB.p - xfA.p, COLOR_PURPLE, 1);
-
-        Vec3 closestA, closestB;
-        closestPointSegments(xfA.mul(shapeA->seg0), xfA.mul(shapeA->seg1),
-                             xfB.mul(shapeB->seg0), xfB.mul(shapeB->seg1),
-                             &closestA, &closestB);
-
-        //drawLine(xfA.mul(shapeA->seg0), xfA.mul(shapeA->seg1), COLOR_RED);
-        //drawLine(xfB.mul(shapeB->seg0), xfB.mul(shapeB->seg1), COLOR_RED);
-
-        //drawLine(closestA, closestB, COLOR_YELLOW);
-        initialDir = xfA.R.transpose()*(closestA - closestB);
-    }
-
-    size_t faceA = -1;
-    size_t vertB = -1;
-    float maxProj = -INFINITY;
-    for(size_t i = 0; i < shapeA->numFaces; i++)
-    {
-        float proj = shapeA->facePlanes[i].normal.dot(initialDir);
-        if(proj > maxProj)
+        if (aFaceToVertexRegionB[i] != 0xff)
         {
-            faceA = i;
-            maxProj = proj;
+            queue[queueHi++] = i;
         }
     }
 
-    Vec3 dirWorld = xfA.rotate(shapeA->facePlanes[faceA].normal);
-    Vec3 dirB = -(xfB.R.transpose()*dirWorld);
-    float supp;
-    getSupport(dirB, shapeB->vertPos, shapeB->numVerts, &supp, &vertB);
-    //drawPointEx(g_sphereOrigin+ shapeA->facePlanes[faceA].normal, COLOR_PURPLE, 0.5f);
+    while (queueLo < queueHi) 
+    {
+        size_t f = queue[queueLo++];
+        uint8_t region = aFaceToVertexRegionB[f];
 
-    res->type = SatResult::FACE_VERT;
-    res->face = faceA;
-    res->vert = vertB;
-    res->support = supp -dirWorld.dot(xfB.p) + dirWorld.dot(xfA.p) + shapeA->facePlanes[faceA].dist;
-    res->mtv = dirWorld;
-}
+        SatShape::EdgeList face = a->faces[f];
+        for (size_t i = 0; i < face.num; i++) 
+        {
+            SatShape::Edge nbr = a->faceEdges[face.first + i];
+            if (aFaceToVertexRegionB[nbr.f1] == 0xff)
+            {
+                Vec3 bVertInA = -bToA.rotate(b->vertPos[region]);
 
-void satCollideLocal(const SatShape *a, Transform xfA, const SatShape *b, Transform xfB, SatResult *res)
-{
-    ZoneScoped;
+                queue[queueHi++] = nbr.f1;
+                aFaceToVertexRegionB[nbr.f1] = region;
+                aFaceMaxDot[nbr.f1] = a->facePlanes[nbr.f1].normal.dot(bVertInA);
 
-    getInitialSeparatingAxis(a, xfA, b, xfB, res);
-    if(res->support < 0) {
-        return;
+
+            }
+        }
     }
 
-    _satCollideLocal(a, xfA, b, xfB, res);
+    for (size_t faceA = 0; faceA < a->numFaces; faceA++)
+    {
+        size_t vertB = aFaceToVertexRegionB[faceA];
+        ASSERT(vertB != 0xff);
+        Plane aPlane = a->facePlanes[faceA];
+        float supp = aFaceMaxDot[faceA];
+        if (supp < res->support)
+        {
+            res->mtv = aPlane.normal;
+            res->type = SatResult::FACE_VERT;
+            res->support = supp;
+            res->vert = vertB;
+            res->face = faceA;
+
+            if (supp < 0)
+            {
+                res->mtv = xfA.rotate(res->mtv);
+                return;
+            }
+        }
+
+    }
+
+    res->mtv = xfA.rotate(res->mtv);
 }
+
 
 
 size_t findIncidentFace(const SatShape *shape, Vec3 dir, size_t vertIdx)
@@ -3190,7 +2988,7 @@ bool generateSatVsSatContacts(const SatShape *shapeA, Transform xfA, size_t inde
 
     if (useLocal)
     {
-        satCollideLocal(shapeA, xfA, shapeB, xfB, &res);
+        satCollideGraph(shapeA, xfA, shapeB, xfB, &res);
     }
     else
     {
@@ -3305,7 +3103,7 @@ void TriShape::setFromVerts(const Vec3 points[3])
 
 size_t generateTriMeshVsSatContacts(const TriMeshShape  *triMesh, Transform xfA, size_t indexA,
                                  const SatShape*shapeB, Transform xfB, size_t indexB,
-                                 SolverManifold *manifolds, bool useLocal)
+                                 SolverManifold *manifolds, bool useGraph)
 {
     ASSERT(shapeB->numVerts > 3);
 
@@ -3353,33 +3151,9 @@ size_t generateTriMeshVsSatContacts(const TriMeshShape  *triMesh, Transform xfA,
             triShape.sat.seg0 = triData->verts[0];
             triShape.sat.seg1 = triData->verts[1];
 
-            if (useLocal)
+            if (useGraph)
             {
-                // use triangle normal as initial axis
-
-                size_t faceA = 0;
-                Vec3 dirWorld = xfA.rotate(shapeA->facePlanes[faceA].normal);
-                Vec3 dirB = -(xfB.R.transpose()*dirWorld);
-                float supp;
-                size_t vertB;
-                getSupport(dirB, shapeB->vertPos, shapeB->numVerts, &supp, &vertB);
-                //drawPointEx(g_sphereOrigin+ shapeA->facePlanes[faceA].normal, COLOR_PURPLE, 0.5f);
-
-                res.type = SatResult::FACE_VERT;
-                res.face = faceA;
-                res.vert = vertB;
-                res.support = supp -dirWorld.dot(xfB.p) + dirWorld.dot(xfA.p) + shapeA->facePlanes[faceA].dist;
-                res.mtv = dirWorld;
-
-                if (res.support < 0)
-                {
-                    continue;
-                }
-                else
-                {
-                    _satCollideLocal(shapeA, xfA, shapeB, xfB, &res);
-                    res.mtv = xfA.rotate(res.mtv);
-                }
+                satCollideGraph(shapeA, xfA, shapeB, xfB, &res);
             }
             else
             {
