@@ -626,7 +626,7 @@ struct SolverManifold
 
 bool generateSatVsSatContacts(const SatShape *shapeA, Transform xfA, size_t indexA,
                              const SatShape *shapeB, Transform xfB, size_t indexB,
-                             SolverManifold *manifold, bool useLocal = false);
+                             SolverManifold *manifold, bool useGraph = false);
 
 
 struct TriMeshShape

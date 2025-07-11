@@ -2980,13 +2980,13 @@ static Vec3 correctNormal(Vec3 a, Vec3 b, Vec3 n, Vec3 debugP)
 
 bool generateSatVsSatContacts(const SatShape *shapeA, Transform xfA, size_t indexA,
                              const SatShape *shapeB, Transform xfB, size_t indexB,
-                             SolverManifold *manifold, bool useLocal)
+                             SolverManifold *manifold, bool useGraph)
 {
     SatResult res;
     ASSERT(shapeA->numVerts > 3);
     ASSERT(shapeB->numVerts > 3);
 
-    if (useLocal)
+    if (useGraph)
     {
         satCollideGraph(shapeA, xfA, shapeB, xfB, &res);
     }

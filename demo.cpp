@@ -426,7 +426,7 @@ void demoTriMesh()
                 Body *bodyB = g_bodies+indexB;
 
                 g_numManifolds += generateSatVsSatContacts(bodyA->shape, bodyA->T, indexA,
-                                                           bodyB->shape, bodyB->T, indexB, g_manifolds+g_numManifolds);
+                                                           bodyB->shape, bodyB->T, indexB, g_manifolds+g_numManifolds, useGraph);
             }
         }
     }
