@@ -524,8 +524,8 @@ void demoTriMesh()
     static int numBodiesToSpawn = 1;
     ImGui::SliderInt("Num Bodies To Spawn", &numBodiesToSpawn, 1, 8);
     ImGui::SliderFloat("Fly Speed", &g_flySpeed, 5.0f, 100.0f); 
-    ImGui::Checkbox("Test Mode", &enableGravity);
-    ImGui::Checkbox("Use Optimized SAT", &useGraph);
+    ImGui::Checkbox("Gravity", &enableGravity);
+    ImGui::Checkbox("Use Graph SAT", &useGraph);
     float dt = ImGui::GetIO().DeltaTime;
     ImGui::LabelText("FPS", "%.2f", 1.0f / dt);
     ImGui::LabelText("Frame Time", "%.02f ms", dt * 1000);
@@ -559,9 +559,9 @@ void demoSatTest()
     static SatShape *shapeB;
     static int scrollAmount;
     static int selectedFace;
-    static float offset = 0.5f;
-    static float angle1 = 221; // 98.76
-    static float angle2 = 221; // 0
+    static float offset = 0.23f;
+    static float angle1 = 180; // 98.76
+    static float angle2 = 243.71; // 0
 
     static bool showReference = true;
     static TriShape tri;
@@ -576,9 +576,9 @@ void demoSatTest()
             { 0.0f, 1.0f, 0.0f}
         };
         tri.setFromVerts(v);
-        hull = makeRandomHull({0.2f, 2.2f, 0.5f}, 1.0f, 128);
+        hull = makeRandomHull({0.5f, 0.5f, 0.5f}, 1.0f, 128);
         shapeA = hull;
-        shapeB = makeRandomHull({0.5f, 0.5f, 1.0f}, 1.0f, 32);
+        shapeB = makeRandomHull({0.5f, 0.5f, 0.5f}, 1.0f, 32);
         g_flycam.pos = {0,0,-5};
 
 
@@ -656,6 +656,8 @@ void demoSatTest()
         Vec3 mtv = xfA.inverse().rotate(res.mtv);
         drawPointEx(g_sphereOrigin + mtv, COLOR_ORANGE, 0.4f);
         ImGui::TextColored(color, "Reference Support (orange point) = %f", res.support);
+        ImGui::TextColored(color, "Reference MTV %f, %f, %f", res.mtv.x, res.mtv.y, res.mtv.z);
+        ImGui::TextColored(color, "Reference feature %d", res.type);
     }
 
     drawGaussMap(shapeA, Transform::identity(), COLOR_BLUE);
@@ -668,6 +670,8 @@ void demoSatTest()
         drawPointEx(g_sphereOrigin + mtv*1.02f, COLOR_YELLOW, 0.4f);
 
         ImGui::TextColored(color, "Graph Support (yellow point) = %f", res.support);
+        ImGui::TextColored(color, "Graph MTV %f, %f, %f", res.mtv.x, res.mtv.y, res.mtv.z);
+        ImGui::TextColored(color, "Graphy feature %d", res.type);
     }
 
 

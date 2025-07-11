@@ -2592,8 +2592,8 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
                 {
                     size_t fa = eA.f0;
                     Plane aPlane = a->facePlanes[fa];
-                    float dot_b0 = aPlane.dist + aPlane.normal.dot(bVert0inA);
-                    float dot_b1 = aPlane.dist + aPlane.normal.dot(bVert1inA);
+                    float dot_b0 = aPlane.normal.dot(bVert0inA);
+                    float dot_b1 = aPlane.normal.dot(bVert1inA);
                     if (dot_b0 > aFaceMaxDot[fa])
                     {
                         aFaceMaxDot[fa] = dot_b0;
@@ -2610,8 +2610,8 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
                 {
                     size_t fa = eA.f1;
                     Plane aPlane = a->facePlanes[fa];
-                    float dot_b0 = aPlane.dist + aPlane.normal.dot(bVert0inA);
-                    float dot_b1 = aPlane.dist + aPlane.normal.dot(bVert1inA);
+                    float dot_b0 = aPlane.normal.dot(bVert0inA);
+                    float dot_b1 = aPlane.normal.dot(bVert1inA);
                     if (dot_b0 > aFaceMaxDot[fa])
                     {
                         aFaceMaxDot[fa] = dot_b0;
@@ -2681,7 +2681,7 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
     uint8_t queue[SAT_MAX];
     size_t queueLo = 0;
     size_t queueHi = 0;
-    for (int i = 0; i < a->numFaces; ++i)
+    for (size_t i = 0; i < a->numFaces; i++)
     {
         if (aFaceToVertexRegionB[i] != 0xff)
         {
@@ -2700,7 +2700,7 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
             SatShape::Edge nbr = a->faceEdges[face.first + i];
             if (aFaceToVertexRegionB[nbr.f1] == 0xff)
             {
-                Vec3 bVertInA = -bToA.rotate(b->vertPos[region]);
+                Vec3 bVertInA = -bToA.mul(b->vertPos[region]);
 
                 queue[queueHi++] = nbr.f1;
                 aFaceToVertexRegionB[nbr.f1] = region;
@@ -2716,7 +2716,8 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
         size_t vertB = aFaceToVertexRegionB[faceA];
         ASSERT(vertB != 0xff);
         Plane aPlane = a->facePlanes[faceA];
-        float supp = aFaceMaxDot[faceA];
+
+        float supp = aPlane.dist + aFaceMaxDot[faceA];
         if (supp < res->support)
         {
             res->mtv = aPlane.normal;
@@ -2987,13 +2988,9 @@ bool generateSatVsSatContacts(const SatShape *shapeA, Transform xfA, size_t inde
     ASSERT(shapeB->numVerts > 3);
 
     if (useGraph)
-    {
         satCollideGraph(shapeA, xfA, shapeB, xfB, &res);
-    }
     else
-    {
         satCollideReference(shapeA, xfA, shapeB, xfB, &res);
-    }
 
     if(res.support < 0)
     {
