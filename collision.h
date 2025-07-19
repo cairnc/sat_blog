@@ -13,7 +13,7 @@
 #ifdef _DEBUG
 #define ASSERT(x) do { if (!(x)) __debugbreak(); } while (0)
 #else
-#define ASSERT(x) (x)
+#define ASSERT(x) 
 //#define ASSERT(x) do { if (!(x)) __debugbreak(); } while (0)
 #endif
 

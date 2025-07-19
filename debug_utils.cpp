@@ -646,8 +646,8 @@ struct PixelShader
 
 
 
-const size_t DEFAULT_SCREEN_WIDTH = 1280;
-const size_t DEFAULT_SCREEN_HEIGHT = 720;
+const size_t DEFAULT_SCREEN_WIDTH = 1600;
+const size_t DEFAULT_SCREEN_HEIGHT = 900;
 
 static HWND                     g_window;
 static int                      g_clientSizeX;

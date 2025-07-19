@@ -2466,7 +2466,7 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
     // For a face afi this map is the min support so far of all the arcs that intersected with arcs connecting afi 
     float aFaceMaxDot[SAT_MAX];
     uint8_t aFaceToVertexRegionB[SAT_MAX];
-    memset(aFaceToVertexRegionB, 0xff, sizeof(aFaceToVertexRegionB[0])*b->numFaces);
+    memset(aFaceToVertexRegionB, 0xff, sizeof(aFaceToVertexRegionB[0])*a->numFaces);
     memset(aFaceMaxDot, 0xfe, sizeof(aFaceMaxDot[0])*a->numFaces);
 
     // as a float the bit pattern 0xfefefefe is -1.6947395e+38
@@ -2510,7 +2510,11 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
         Vec3 rayDir = rayEnd - rayOrigin;
 
         int curVertA = bFaceToVertexRegionA[eB.f0];
-        ASSERT(curVertA != 0xff);
+        //ASSERT(curVertA != 0xff);
+
+        // verts of -B in A
+        Vec3 bVert0inA = -bToA.mul(b->vertPos[eB.v0]); 
+        Vec3 bVert1inA = -bToA.mul(b->vertPos[eB.v1]); 
 
         //drawPoint(sphereOrigin+rayOrigin, COLOR_ORANGE);
         //drawArcBetween(sphereOrigin, rayOrigin, rayMid, 1.0f, COLOR_GREEN, true);
@@ -2535,7 +2539,7 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
                 //drawArrow(sphereOrigin+ Vec3::lerp(0.5f, b->facePlanes[b->edges[portal.e].f0].normal, b->facePlanes[b->edges[portal.e].f1].normal).normalize(), portalNormal, COLOR_RED, 1.0f);
 
                 float raySlope = portalNormal.dot(rayDir);
-                if (raySlope < -0.001f)
+                if (raySlope < 0)
                 {
                     float tHit = -rayOrigin.dot(portalNormal) / raySlope;
                     if (tHit < tMin)
@@ -2555,7 +2559,6 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
 
                 curVertA = eA.v1;
                 Vec3 normal =(rayOrigin+rayDir*tMin).normalized();
-                Vec3 bVert0inA = -bToA.mul(b->vertPos[eB.v0]); // vert is in -B 
                 float support = normal.dot(bVert0inA + a->vertPos[curVertA]);
                 if (support < res->support)
                 {
@@ -2584,7 +2587,6 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
 
 
                 // relax both faces of A connected to the arc we intersected
-                Vec3 bVert1inA = -bToA.mul(b->vertPos[eB.v1]); // vert is in -B 
 
                 // There might be a way to do less work here
 
@@ -2694,19 +2696,17 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
         size_t f = queue[queueLo++];
         uint8_t region = aFaceToVertexRegionB[f];
 
+        Vec3 bVertInA = -bToA.mul(b->vertPos[region]);
+
         SatShape::EdgeList face = a->faces[f];
         for (size_t i = 0; i < face.num; i++) 
         {
             SatShape::Edge nbr = a->faceEdges[face.first + i];
             if (aFaceToVertexRegionB[nbr.f1] == 0xff)
             {
-                Vec3 bVertInA = -bToA.mul(b->vertPos[region]);
-
                 queue[queueHi++] = nbr.f1;
                 aFaceToVertexRegionB[nbr.f1] = region;
                 aFaceMaxDot[nbr.f1] = a->facePlanes[nbr.f1].normal.dot(bVertInA);
-
-
             }
         }
     }
@@ -2732,6 +2732,7 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
                 return;
             }
         }
+
 
     }
 
