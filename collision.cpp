@@ -2680,7 +2680,6 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
 
 
     // Color any remaining faces of A that haven't been had their arcs intersected
-#if 1
     uint8_t queue[SAT_MAX];
     size_t queueSize = 0;
     for (size_t i = 0; i < a->numFaces; i++)
@@ -2717,41 +2716,6 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
             }
         }
     }
-
-#else
-    uint8_t queue[SAT_MAX];
-    size_t queueLo = 0;
-    size_t queueHi = 0;
-    for (size_t i = 0; i < a->numFaces; i++)
-    {
-        if (aFaceToVertexRegionB[i] != 0xff)
-        {
-            queue[queueHi++] = i;
-        }
-    }
-
-    while (queueLo < queueHi) 
-    {
-        size_t f = queue[queueLo++];
-        uint8_t region = aFaceToVertexRegionB[f];
-
-        Vec3 bVertInA = -bToA.mul(b->vertPos[region]);
-
-        SatShape::EdgeList face = a->faces[f];
-        for (size_t i = 0; i < face.num; i++) 
-        {
-            SatShape::Edge nbr = a->faceEdges[face.first + i];
-            if (aFaceToVertexRegionB[nbr.f1] == 0xff)
-            {
-                queue[queueHi++] = nbr.f1;
-                aFaceToVertexRegionB[nbr.f1] = region;
-                aFaceMaxDot[nbr.f1] = a->facePlanes[nbr.f1].normal.dot(bVertInA);
-            }
-        }
-    }
-#endif
-
-
 
 
     for (size_t faceA = 0; faceA < a->numFaces; faceA++)

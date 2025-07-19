@@ -264,40 +264,34 @@ struct DemoTriMesh
         SetFlyCam({ 10.091136f,6.8672866f,8.7661008f }, -2.2599978f, 0.34799960f);
     }
 
-    void spawnRandomBodies(Vec3 origin, size_t numX, size_t numY, size_t numZ)
+    void spawnRandomBodies(Vec3 origin, int numBodiesToSpawn)
     {
-        for(size_t x = 0; x < numX; x++)
+        for (int i = 0; i < numBodiesToSpawn; i++)
         {
-            for(size_t y = 0; y < numY; y++)
+            SatShape *shape = NULL;
+
+            Vec3 extent = Vec3{ 0.1f, 0.1f, 0.1f } + Vec3::rand01() * 0.5f;
+
+            size_t type = rand() % 2;
+            if (type == 0)
             {
-                for(size_t z = 0; z < numZ; z++)
-                {
-                    SatShape *shape = NULL;
-
-                    Vec3 extent = Vec3{0.1f, 0.1f, 0.1f} + Vec3::rand01()*0.5f;
-
-                    size_t type = rand() % 2;
-                    if (1 || type == 0)
-                    {
-                        shape = makeRandomHull(extent, 1.0f, 128);
-                    }
-                    else if (type == 1)
-                    {
-                        shape = makeBoxShape(extent, 1.0f);
-                    }
-
-                    Body *body = bodies+numBodies++;
-                    body->shape = shape;
-                    body->v = {};
-                    body->w = {};
-                    body->id = g_nextBodyId;
-                    body->T = {Mat3::identity(), Vec3{ 4.0f*x, 4.0f*y, 4.0f*z } + origin};
-                    body->T.R = Mat3::rotY(Math::DEG2RAD*90)*Mat3::rotZ(Math::DEG2RAD*45.0f);
-                    body->iM = shape->invMass;
-                    body->iI = shape->invInertia;
-                    g_nextBodyId++;
-                }
+                shape = makeRandomHull(extent, 1.0f, 128);
             }
+            else if (type == 1)
+            {
+                shape = makeBoxShape(extent, 1.0f);
+            }
+
+            Body *body = bodies + numBodies++;
+            body->shape = shape;
+            body->v = {};
+            body->w = {};
+            body->id = g_nextBodyId;
+            body->T = { Mat3::identity(), Vec3{ 0, 1.5f*i, 0 } + origin };
+            body->T.R = Mat3::rotY(Math::DEG2RAD * 90) * Mat3::rotZ(Math::DEG2RAD * 45.0f);
+            body->iM = shape->invMass;
+            body->iI = shape->invInertia;
+            g_nextBodyId++;
         }
     }
 
@@ -623,7 +617,7 @@ struct DemoTriMesh
         ImGui::LabelText("Body Count", "%d", numBodies);
 
         static int numBodiesToSpawn = 1;
-        ImGui::SliderInt("Num Bodies To Spawn", &numBodiesToSpawn, 1, 8);
+        ImGui::SliderInt("Num Bodies To Spawn", &numBodiesToSpawn, 1, 64);
         ImGui::SliderFloat("Fly Speed", &g_flySpeed, 5.0f, 100.0f);
         ImGui::Checkbox("Gravity", &enableGravity);
         ImGui::Checkbox("Use Graph SAT", &useGraph);
@@ -635,11 +629,12 @@ struct DemoTriMesh
         ImGui::LabelText("Narrowphase", "%.02f ms", (timer2 - timer1) * 1000);
         ImGui::LabelText("Constraints", "%.02f ms", (timer3 - timer2) * 1000);
 
+        Vec3 dir = g_flycam.rot.c2;
+        Vec3 spawnPos = g_flycam.pos + dir * 10;
+        drawWireSphere(spawnPos, 0.5f, COLOR_PURPLE);
         if (ImGui::Button("Spawn Random Bodies"))
         {
-            Vec3 dir = g_flycam.rot.c2;
-            Vec3 spawnPos = g_flycam.pos + dir * 10;
-            spawnRandomBodies(spawnPos, numBodiesToSpawn, numBodiesToSpawn, numBodiesToSpawn);
+            spawnRandomBodies(spawnPos, numBodiesToSpawn);
         }
 
         if (ImGui::Button("Remove All Bodies"))

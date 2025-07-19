@@ -212,12 +212,12 @@ void drawWireSphere(Vec3 p, float radius, Color color)
             float tj1 = 2*Math::PI/NLat*(j+1);
 
             float c0 = cosf(tj0);
-            float s0 = cosf(tj0);
-            Vec3 p0 = {p.x+d.x*c0, p.y+d.y*c0, p.z+d.z*c0 + s0*radius};
+            float s0 = sinf(tj0);
+            Vec3 p0 = p + Vec3{ d.x * c0, d.y * c0, d.z * c0 + s0 }*radius;
 
             float c1 = cosf(tj1);
-            float s1 = cosf(tj1);
-            Vec3 p1 = {p.x+d.x*c1, p.y+d.y*c1, p.z+d.z*c1 + s1*radius};
+            float s1 = sinf(tj1);
+            Vec3 p1 = p + Vec3{ d.x * c1, d.y * c1, d.z * c1 + s1 }*radius;
 
             _drawLine(p0,p1,color);
         }
