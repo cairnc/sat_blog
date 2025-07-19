@@ -544,7 +544,7 @@ void setCamera(Mat3 rot, Vec3 pos)
 #include "imgui\imgui_impl_win32.h"
 
 #define SAFE_RELEASE(x) do { if (x) { (x)->Release(); (x) = NULL; } } while (0)
-#define CHECK_HR(x) ASSERT((x) == S_OK)
+#define CHECK_HR(x) do { if ((x) != S_OK) { MessageBoxA(nullptr, "Expression failed: " #x, "Fatal Error!", MB_ICONERROR | MB_OK);  ExitProcess(1); } } while (0)
 
 static ID3D11Device             *g_device;
 static ID3D11DeviceContext      *g_deviceContext;
@@ -552,7 +552,6 @@ static ID3D11DeviceContext      *g_deviceContext;
 ID3D11Buffer *updateDynamicBuffer(ID3D11Buffer *buf, const void *data, size_t size, size_t capacity, D3D11_BIND_FLAG usage)
 {
     ASSERT(capacity > 0);
-
     if (buf)
     {
         D3D11_BUFFER_DESC desc;
@@ -570,7 +569,7 @@ ID3D11Buffer *updateDynamicBuffer(ID3D11Buffer *buf, const void *data, size_t si
         CHECK_HR(g_device->CreateBuffer(&desc, NULL, &buf));
     }
 
-    D3D11_MAPPED_SUBRESOURCE mapped;
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
     CHECK_HR(g_deviceContext->Map(buf,0, D3D11_MAP_WRITE_DISCARD,0,&mapped));
     memcpy(mapped.pData, data, size);
     g_deviceContext->Unmap(buf, 0);
@@ -608,7 +607,7 @@ struct VertexShader
 
     void compile(const char *source, size_t sourceLen, const char *entry, D3D11_INPUT_ELEMENT_DESC elems[], size_t numElems)
     {
-        ID3D10Blob *code;
+        ID3D10Blob *code = nullptr;
         CHECK_HR(D3DCompile(source, sourceLen, NULL, NULL, NULL, entry, "vs_5_0", 0, 0, &code, NULL));
         CHECK_HR(g_device->CreateVertexShader(code->GetBufferPointer(), code->GetBufferSize(), NULL, &vertexShader));
         CHECK_HR(g_device->CreateInputLayout(elems, (UINT)numElems, code->GetBufferPointer(), code->GetBufferSize(), &inputLayout));
@@ -630,7 +629,7 @@ struct PixelShader
 
     void compile(const char *source, size_t sourceLen, const char *entry)
     {
-        ID3D10Blob *code;
+        ID3D10Blob *code = nullptr;
         CHECK_HR(D3DCompile(source, sourceLen, NULL, NULL, NULL, entry, "ps_5_0", 0, 0, &code, NULL));
         CHECK_HR(g_device->CreatePixelShader(code->GetBufferPointer(), code->GetBufferSize(), NULL, &pixelShader));
         code->Release();

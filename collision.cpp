@@ -2510,11 +2510,10 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
         Vec3 rayDir = rayEnd - rayOrigin;
 
         int curVertA = bFaceToVertexRegionA[eB.f0];
-        //ASSERT(curVertA != 0xff);
+        ASSERT(curVertA != 0xff);
 
         // verts of -B in A
         Vec3 bVert0inA = -bToA.mul(b->vertPos[eB.v0]); 
-        Vec3 bVert1inA = -bToA.mul(b->vertPos[eB.v1]); 
 
         //drawPoint(sphereOrigin+rayOrigin, COLOR_ORANGE);
         //drawArcBetween(sphereOrigin, rayOrigin, rayMid, 1.0f, COLOR_GREEN, true);
@@ -2587,6 +2586,7 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
 
 
                 // relax both faces of A connected to the arc we intersected
+                Vec3 bVert1inA = -bToA.mul(b->vertPos[eB.v1]);
 
                 // There might be a way to do less work here
 
@@ -2680,6 +2680,45 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
 
 
     // Color any remaining faces of A that haven't been had their arcs intersected
+#if 1
+    uint8_t queue[SAT_MAX];
+    size_t queueSize = 0;
+    for (size_t i = 0; i < a->numFaces; i++)
+    {
+        if (aFaceToVertexRegionB[i] == 0xff)
+        {
+            queue[queueSize++] = i;
+        }
+    }
+
+    while (queueSize > 0) 
+    {
+        // For each uncolored node, find if any neighbor is colored
+        for (size_t queueIdx = 0; queueIdx < queueSize; queueIdx++) 
+        {
+            size_t curFaceIdx = queue[queueIdx];
+            SatShape::EdgeList curFace = a->faces[curFaceIdx];
+            for (size_t edgeIdx = 0; edgeIdx < curFace.num; edgeIdx++) 
+            {
+                SatShape::Edge nbr = a->faceEdges[curFace.first + edgeIdx];
+
+                uint8_t nbrRegion = aFaceToVertexRegionB[nbr.f1];
+                if (nbrRegion != 0xff)
+                {
+                    // Color this node the same as its neighbor
+                    Vec3 bVertInA = -bToA.mul(b->vertPos[nbrRegion]);
+                    aFaceToVertexRegionB[curFaceIdx] = nbrRegion;
+                    aFaceMaxDot[curFaceIdx] = a->facePlanes[curFaceIdx].normal.dot(bVertInA);
+
+                    // Node is colored, remove from queue.
+                    queue[queueIdx--] = queue[--queueSize];
+                    break;
+                }
+            }
+        }
+    }
+
+#else
     uint8_t queue[SAT_MAX];
     size_t queueLo = 0;
     size_t queueHi = 0;
@@ -2710,6 +2749,10 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
             }
         }
     }
+#endif
+
+
+
 
     for (size_t faceA = 0; faceA < a->numFaces; faceA++)
     {
@@ -2732,8 +2775,6 @@ void satCollideGraph(const SatShape *a, Transform xfA, const SatShape *b, Transf
                 return;
             }
         }
-
-
     }
 
     res->mtv = xfA.rotate(res->mtv);
